@@ -5,13 +5,31 @@ const { cloudinary } = require('../config/cloudinary');
 // GET /api/products
 const getAll = async (req, res) => {
   try {
-    const { iCategoriaId, bDisponible, sNombre } = req.query;
+    const { iCategoriaId, bDisponible, sNombre, minPrecio, maxPrecio, bActivo } = req.query;
 
-    const where = { bActivo: true };
+    const where = {};
+    
+    // Filtro por estado activo (por defecto activo=true, a menos que se pida "all" o false explícito)
+    if (bActivo === 'todos' || bActivo === 'all') {
+      // no filtrar por bActivo
+    } else if (bActivo === 'false') {
+      where.bActivo = false;
+    } else {
+      where.bActivo = true; // Por defecto solo mostrar activos
+    }
 
     if (iCategoriaId) where.iCategoriaId = iCategoriaId;
-    if (bDisponible !== undefined) where.bDisponible = bDisponible === 'true';
+    
+    if (bDisponible === 'true') where.bDisponible = true;
+    else if (bDisponible === 'false') where.bDisponible = false;
+    
     if (sNombre) where.sNombre = { [Op.like]: `%${sNombre}%` };
+
+    if (minPrecio || maxPrecio) {
+      where.dPrecio = {};
+      if (minPrecio) where.dPrecio[Op.gte] = parseFloat(minPrecio);
+      if (maxPrecio) where.dPrecio[Op.lte] = parseFloat(maxPrecio);
+    }
 
     const products = await Product.findAll({
       where,
@@ -21,6 +39,7 @@ const getAll = async (req, res) => {
 
     return res.json(products);
   } catch (error) {
+    console.error('Error al obtener productos:', error);
     return res.status(500).json({ message: 'Error al obtener productos.', error: error.message });
   }
 };
