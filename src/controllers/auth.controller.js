@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { User } = require('../models');
+const jwt    = require('jsonwebtoken');
+const { User, Table } = require('../models');
 
 // POST /api/auth/register
 const register = async (req, res) => {
@@ -30,7 +30,17 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ where: { email } });
+    // Incluir mesa si el usuario es cliente
+    const user = await User.findOne({
+      where: { email },
+      include: [{
+        model: Table,
+        as: 'mesa',
+        attributes: ['id', 'sNombre', 'sUbicacion', 'sEstado'],
+        required: false,
+      }],
+    });
+
     if (!user) {
       return res.status(401).json({ message: 'Credenciales inválidas.' });
     }
@@ -40,8 +50,14 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Credenciales inválidas.' });
     }
 
+    // iMesaId viaja en el token para que el backend lo use al crear pedidos
     const token = jwt.sign(
-      { id: user.id, email: user.email, rol: user.rol },
+      {
+        id:      user.id,
+        email:   user.email,
+        rol:     user.rol,
+        iMesaId: user.iMesaId || null,
+      },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
@@ -49,7 +65,14 @@ const login = async (req, res) => {
     return res.json({
       message: 'Login exitoso.',
       token,
-      user: { id: user.id, nombre: user.nombre, email: user.email, rol: user.rol },
+      user: {
+        id:      user.id,
+        nombre:  user.nombre,
+        email:   user.email,
+        rol:     user.rol,
+        iMesaId: user.iMesaId || null,
+        mesa:    user.mesa    || null,
+      },
     });
   } catch (error) {
     console.error(error);

@@ -4,7 +4,8 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class User extends Model {
     static associate(models) {
-      // Definir asociaciones aquí
+      // Un cliente pertenece a una mesa
+      User.belongsTo(models.Table, { foreignKey: 'iMesaId', as: 'mesa' });
     }
   }
 
@@ -30,8 +31,13 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       rol: {
-        type: DataTypes.ENUM('admin', 'cliente'),
+        type: DataTypes.ENUM('admin', 'cliente', 'mesero', 'caja'),
         defaultValue: 'cliente',
+      },
+      iMesaId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,    // null para admin, mesero y caja
+        references: { model: 'tables', key: 'id' },
       },
     },
     {

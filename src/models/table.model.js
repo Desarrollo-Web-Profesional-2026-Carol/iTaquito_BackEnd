@@ -4,7 +4,8 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class Table extends Model {
     static associate(models) {
-    
+      // Una mesa puede tener un usuario (dispositivo cliente) asignado
+      Table.hasOne(models.User, { foreignKey: 'iMesaId', as: 'usuario' });
     }
   }
 
@@ -19,17 +20,12 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
         unique: true,
-        validate: {
-          notEmpty: true,
-        },
+        validate: { notEmpty: true },
       },
       iCapacidad: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        validate: {
-          min: 1,
-          max: 20,
-        },
+        validate: { min: 1, max: 20 },
       },
       sUbicacion: {
         type: DataTypes.ENUM('interior', 'exterior', 'terraza', 'vip'),
