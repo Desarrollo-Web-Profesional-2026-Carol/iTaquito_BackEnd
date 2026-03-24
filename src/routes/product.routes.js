@@ -5,15 +5,28 @@ const { upload } = require('../config/cloudinary');
 
 const router = Router();
 
-// Rutas públicas
-router.get('/', getAll);
-router.get('/:id', getById);
+// Middleware "soft" — decodifica el token si viene, pero no bloquea si no hay
+const softAuth = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (token) {
+    try {
+      const jwt = require('jsonwebtoken');
+      req.user = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      // token inválido → sin usuario, continúa
+    }
+  }
+  next();
+};
 
-// Rutas protegidas (solo admin)
-// upload.single('imagen') intercepta el campo "imagen" del FormData y lo sube a Cloudinary
-router.post('/', verifyToken, verifyAdmin, upload.single('imagen'), create);
-router.put('/:id', verifyToken, verifyAdmin, upload.single('imagen'), update);
+// Públicas (con softAuth para que admin vea inactivos)
+router.get('/',    softAuth, getAll);
+router.get('/:id', softAuth, getById);
+
+// Solo admin
+router.post('/',      verifyToken, verifyAdmin, upload.single('imagen'), create);
+router.put('/:id',    verifyToken, verifyAdmin, upload.single('imagen'), update);
 router.delete('/:id', verifyToken, verifyAdmin, remove);
 
 module.exports = router;
-
