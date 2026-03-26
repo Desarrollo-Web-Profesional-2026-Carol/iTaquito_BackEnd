@@ -4,8 +4,7 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class Table extends Model {
     static associate(models) {
-      // Una mesa puede tener un usuario (dispositivo cliente) asignado
-      Table.hasOne(models.User, { foreignKey: 'iMesaId', as: 'usuario' });
+      Table.hasMany(models.User, { foreignKey: 'iMesaId', as: 'usuarios' });
     }
   }
 
