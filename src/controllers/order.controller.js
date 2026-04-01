@@ -33,8 +33,9 @@ const calcTotal = (items) =>
 
 /* ══════════════════════════════════════════════════════════════
    GET /orders
-   - Cliente: solo ve pedidos de su propia mesa (forzado por token)
-   - Staff:   puede filtrar por iMesaId, sEstado, fecha o ver todos
+   - Cliente: solo ve pedidos de su mesa DESDE su loginAt
+             (aísla la sesión actual sin tabla de sesiones)
+   - Staff:   puede filtrar por iMesaId, sEstado, fecha
 ══════════════════════════════════════════════════════════════ */
 const getAll = async (req, res) => {
   try {
@@ -49,9 +50,18 @@ const getAll = async (req, res) => {
       where.createdAt = { [Op.gte]: inicio, [Op.lt]: fin };
     }
 
-    // Cliente solo ve sus propios pedidos — no puede ver los de otras mesas
     if (req.user.rol === 'cliente') {
-      where.iMesaId = req.user.iMesaId;
+      // Forzar mesa del token — el cliente no puede ver otras mesas
+      where.iMesaId    = req.user.iMesaId;
+      where.iUsuarioId = req.user.id;
+
+      // FIX SESIÓN: filtrar solo pedidos creados desde el inicio de esta sesión.
+      // loginAt viene en el JWT y se regenera en cada login, así pedidos
+      // de sesiones anteriores del mismo usuario/mesa quedan excluidos.
+      if (req.user.loginAt) {
+        const desde = new Date(req.user.loginAt);
+        where.createdAt = { [Op.gte]: desde };
+      }
     } else if (iMesaId) {
       where.iMesaId = iMesaId;
     }
@@ -164,8 +174,9 @@ const create = async (req, res) => {
 
     const order = await Order.create({
       iMesaId, iUsuarioId,
-      sNotas: sNotas || null,
-      dTotal, sEstado: 'pendiente',
+      sNotas:  sNotas || null,
+      dTotal,
+      sEstado: 'pendiente',
     });
 
     await OrderItem.bulkCreate(itemsData.map(i => ({ ...i, iOrdenId: order.id })));
@@ -207,7 +218,10 @@ const changeStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: 'El estado es requerido.' });
     }
     if (!VALID_STATES.includes(sEstado)) {
-      return res.status(400).json({ success: false, message: `Estado inválido. Debe ser uno de: ${VALID_STATES.join(', ')}` });
+      return res.status(400).json({
+        success: false,
+        message: `Estado inválido. Debe ser uno de: ${VALID_STATES.join(', ')}`,
+      });
     }
 
     const order = await Order.findByPk(req.params.id);
@@ -226,7 +240,11 @@ const changeStatus = async (req, res) => {
     await order.update({ sEstado });
     const updated = await Order.findByPk(order.id, { include: ORDER_INCLUDE });
 
-    return res.json({ success: true, message: `Pedido actualizado a "${sEstado}".`, data: updated });
+    return res.json({
+      success: true,
+      message: `Pedido actualizado a "${sEstado}".`,
+      data: updated,
+    });
   } catch (error) {
     console.error('Error en changeStatus order:', error);
     return res.status(500).json({
@@ -256,7 +274,11 @@ const cancel = async (req, res) => {
     await order.update({ sEstado: 'cancelado' });
     const cancelled = await Order.findByPk(order.id, { include: ORDER_INCLUDE });
 
-    return res.json({ success: true, message: 'Pedido cancelado correctamente.', data: cancelled });
+    return res.json({
+      success: true,
+      message: 'Pedido cancelado correctamente.',
+      data: cancelled,
+    });
   } catch (error) {
     console.error('Error en cancel order:', error);
     return res.status(500).json({

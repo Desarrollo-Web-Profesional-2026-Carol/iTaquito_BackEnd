@@ -24,11 +24,11 @@ module.exports = (sequelize, DataTypes) => {
       },
       iUsuarioId: {
         type: DataTypes.INTEGER,
-        allowNull: true,          // null si el cliente no inició sesión
+        allowNull: true,
         references: { model: 'users', key: 'id' },
       },
       sEstado: {
-        type: DataTypes.ENUM('pendiente', 'en_preparacion', 'listo', 'entregado', 'cancelado'),
+        type: DataTypes.ENUM('pendiente', 'en_preparacion', 'listo', 'entregado', 'pagado', 'cancelado'),
         defaultValue: 'pendiente',
         allowNull: false,
       },
@@ -39,7 +39,21 @@ module.exports = (sequelize, DataTypes) => {
       },
       sNotas: {
         type: DataTypes.TEXT,
-        allowNull: true,          // notas generales del pedido
+        allowNull: true,
+      },
+      // NUEVOS CAMPOS PARA CAJERO
+      bPagado: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        allowNull: false,
+      },
+      dFechaPago: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      sMetodoPago: {
+        type: DataTypes.ENUM('efectivo', 'tarjeta', 'transferencia'),
+        allowNull: true,
       },
     },
     {

@@ -24,4 +24,12 @@ const verifyAdmin = (req, res, next) => {
   next();
 };
 
-module.exports = { verifyToken, verifyAdmin };
+const verifyCajero = (req, res, next) => {
+  if (req.user?.rol !== 'cajero' && req.user?.rol !== 'admin') {
+    return res.status(403).json({ message: 'Acceso restringido a cajeros.' });
+  }
+  next();
+};
+
+
+module.exports = { verifyToken, verifyAdmin, verifyCajero };

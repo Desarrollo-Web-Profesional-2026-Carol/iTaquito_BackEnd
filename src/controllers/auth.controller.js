@@ -2,7 +2,9 @@ const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const { User, Table } = require('../models');
 
-// POST /api/auth/register
+/* ══════════════════════════════════════════════════════════════
+   POST /api/auth/register
+══════════════════════════════════════════════════════════════ */
 const register = async (req, res) => {
   try {
     const { nombre, email, password, iMesaId } = req.body;
@@ -32,7 +34,13 @@ const register = async (req, res) => {
 
     return res.status(201).json({
       message: 'Usuario registrado exitosamente.',
-      user: { id: user.id, nombre: user.nombre, email: user.email, rol: user.rol, iMesaId: user.iMesaId },
+      user: {
+        id:      user.id,
+        nombre:  user.nombre,
+        email:   user.email,
+        rol:     user.rol,
+        iMesaId: user.iMesaId,
+      },
     });
   } catch (error) {
     console.error(error);
@@ -40,7 +48,11 @@ const register = async (req, res) => {
   }
 };
 
-// POST /api/auth/login
+/* ══════════════════════════════════════════════════════════════
+   POST /api/auth/login
+   FIX: se agrega loginAt al payload del JWT para que el backend
+   pueda filtrar pedidos por sesión activa sin tabla de sesiones.
+══════════════════════════════════════════════════════════════ */
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -64,12 +76,15 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Credenciales inválidas.' });
     }
 
+    // Marcar mesa como ocupada si es cliente
     if (user.rol === 'cliente' && user.iMesaId) {
       const mesa = await Table.findByPk(user.iMesaId);
-      if (mesa) {
-        await mesa.update({ sEstado: 'ocupada' });
-      }
+      if (mesa) await mesa.update({ sEstado: 'ocupada' });
     }
+
+    // FIX: incluir loginAt en el payload — se usa en order.controller
+    // para filtrar pedidos de la sesión actual solamente
+    const loginAt = new Date().toISOString();
 
     const token = jwt.sign(
       {
@@ -77,12 +92,15 @@ const login = async (req, res) => {
         email:   user.email,
         rol:     user.rol,
         iMesaId: user.iMesaId || null,
+        loginAt,                          // <-- nuevo campo
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
 
-    const mesaActualizada = user.iMesaId ? await Table.findByPk(user.iMesaId) : null;
+    const mesaActualizada = user.iMesaId
+      ? await Table.findByPk(user.iMesaId)
+      : null;
 
     return res.json({
       message: 'Login exitoso.',
@@ -94,6 +112,7 @@ const login = async (req, res) => {
         rol:     user.rol,
         iMesaId: user.iMesaId || null,
         mesa:    mesaActualizada || null,
+        loginAt,                          // el frontend guarda esto en AuthContext
       },
     });
   } catch (error) {
@@ -102,14 +121,15 @@ const login = async (req, res) => {
   }
 };
 
-// POST /api/auth/logout
+/* ══════════════════════════════════════════════════════════════
+   POST /api/auth/logout
+   Libera la mesa del cliente al cerrar sesión
+══════════════════════════════════════════════════════════════ */
 const logout = async (req, res) => {
   try {
     if (req.user?.rol === 'cliente' && req.user?.iMesaId) {
       const mesa = await Table.findByPk(req.user.iMesaId);
-      if (mesa) {
-        await mesa.update({ sEstado: 'disponible' });
-      }
+      if (mesa) await mesa.update({ sEstado: 'disponible' });
     }
     return res.json({ message: 'Sesión cerrada correctamente.' });
   } catch (error) {
