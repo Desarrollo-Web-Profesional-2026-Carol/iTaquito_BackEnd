@@ -73,24 +73,11 @@ const getOrdersByTable = async (req, res) => {
       order: [['createdAt', 'ASC']],
     });
 
-<<<<<<< HEAD:src/controllers/cajero.controller.js
-    // 3. Agrupar por mesa y filtrar por sesión activa
-    const ordersByTable = {};
-
-    orders.forEach(order => {
-      const mesaId      = order.iMesaId;
-      const loginAt     = loginPorMesa[mesaId];
-      const totalOrden  = calcularTotalOrden(order);
-
-      // Si hay dUltimoLogin para esta mesa, ignorar pedidos anteriores a esa fecha
-      if (loginAt && new Date(order.createdAt) < new Date(loginAt)) return;
-=======
     const ordersBySession = {};
 
     orders.forEach(order => {
       const tokenSesion = order.sTokenSesion || `legacy-${order.iMesaId}`;
       const totalOrden = calcularTotalOrden(order);
->>>>>>> origin/main:src/modules/cajero/cajero.controller.js
 
       if (!ordersBySession[tokenSesion]) {
         ordersBySession[tokenSesion] = {
@@ -241,11 +228,7 @@ const approvePayment = async (req, res) => {
     }
 
     const orders = await Order.findAll({
-<<<<<<< HEAD:src/controllers/cajero.controller.js
-      where: whereOrdenes,
-=======
       where: orderWhere,
->>>>>>> origin/main:src/modules/cajero/cajero.controller.js
       include: ORDER_INCLUDE,
       transaction,
     });
@@ -262,10 +245,6 @@ const approvePayment = async (req, res) => {
 
     // 1. Marcar órdenes como pagadas
     await Order.update(
-<<<<<<< HEAD:src/controllers/cajero.controller.js
-      { bPagado: true, dFechaPago: new Date(), sMetodoPago: metodoPago, sEstado: 'pagado' },
-      { where: whereOrdenes, transaction }
-=======
       {
         bPagado:     true,
         dFechaPago:  new Date(),
@@ -276,7 +255,6 @@ const approvePayment = async (req, res) => {
         where: orderWhere,
         transaction,
       }
->>>>>>> origin/main:src/modules/cajero/cajero.controller.js
     );
 
     // 2. Liberar mesa
@@ -349,16 +327,11 @@ const changeTableAvailability = async (req, res) => {
       });
     }
 
-<<<<<<< HEAD:src/controllers/cajero.controller.js
-    const mesa = await Table.findByPk(mesaId);
-    if (!mesa) return res.status(404).json({ success: false, message: 'Mesa no encontrada' });
-=======
     const mesa = await Table.findByPk(mesaId, { transaction });
     if (!mesa) {
       await transaction.rollback();
       return res.status(404).json({ success: false, message: 'Mesa no encontrada' });
     }
->>>>>>> origin/main:src/modules/cajero/cajero.controller.js
 
     if (sEstado === 'disponible') {
       // Cancelar todos los pedidos huérfanos que no estén ya pagados o cancelados
