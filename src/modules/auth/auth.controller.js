@@ -63,19 +63,12 @@ const login = async (req, res) => {
 
     const loginAt = new Date();
 
-<<<<<<< HEAD:src/controllers/auth.controller.js
     if (user.rol === 'cliente' && user.iMesaId) {
       const mesa = await Table.findByPk(user.iMesaId);
       if (mesa) await mesa.update({ sEstado: 'ocupada' });
       // NUEVO: guardar inicio de sesión en BD
       await user.update({ dUltimoLogin: loginAt });
     }
-=======
-    // El estado de la mesa ya no se marca como ocupada aquí.
-    // El frontend (MenuMesa) lo cambia a 'ocupada' nativamente al dar click a 'Comenzar'.
-    // para filtrar pedidos de la sesión actual solamente
-    const loginAt = new Date().toISOString();
->>>>>>> origin/main:src/modules/auth/auth.controller.js
 
     const token = jwt.sign(
       {
