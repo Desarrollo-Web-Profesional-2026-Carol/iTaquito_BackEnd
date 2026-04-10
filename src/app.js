@@ -3,8 +3,39 @@ const cors = require('cors');
 
 const app = express();
 
+// Configuración CORS mejorada
+const corsOptions = {
+  origin: function(origin, callback) {
+    // Permitir solicitudes sin origen (como Postman, apps móviles)
+    if (!origin) return callback(null, true);
+    
+    // Lista de orígenes permitidos
+    const allowedOrigins = [
+      'http://localhost:5173',      // Desarrollo Vite
+      'http://localhost:3000',      // Desarrollo local
+      'https://itaquito.netlify.app' // Producción Netlify
+    ];
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      callback(new Error('No permitido por CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Authorization'],
+  optionsSuccessStatus: 200
+};
+
+// Aplicar CORS a todas las rutas
+app.use(cors(corsOptions));
+
+// NO necesitas esta línea - CORREGIDO: ELIMINAR o comentar
+// app.options('*', cors(corsOptions));  // ← ELIMINA ESTA LÍNEA
+
 // Middlewares globales
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -24,8 +55,6 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/tables', tableRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/cajero', cajeroRoutes);
-
-
 
 // Ruta de prueba
 app.get('/', (req, res) => {
