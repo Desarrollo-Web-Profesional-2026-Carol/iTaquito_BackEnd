@@ -59,6 +59,15 @@ backupCodes: {
   type: DataTypes.TEXT,
   allowNull: true
 },
+
+resetToken: {
+  type: DataTypes.STRING,
+  allowNull: true
+},
+resetExpires: {
+  type: DataTypes.DATE,
+  allowNull: true
+},
 resetRequestedAt: {
   type: DataTypes.DATE,
   allowNull: true

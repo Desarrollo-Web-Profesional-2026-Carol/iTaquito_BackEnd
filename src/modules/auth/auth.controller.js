@@ -1,7 +1,10 @@
 const speakeasy = require('speakeasy');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { User } = require('../../models');
+const { sendPasswordResetEmail } = require('../../common/config/email');
+const { Op } = require('sequelize');
 
 // Función para verificar código 2FA
 const verify2FACode = (secret, token) => {
@@ -18,16 +21,13 @@ const register = async (req, res) => {
   try {
     const { email, password, nombre, rol } = req.body;
 
-    // Verificar si el usuario ya existe
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(400).json({ message: 'El usuario ya existe' });
     }
 
-    // Hashear contraseña
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Crear usuario
     const user = await User.create({
       email,
       password: hashedPassword,
@@ -56,7 +56,6 @@ const login = async (req, res) => {
   try {
     const { email, password, twoFactorCode } = req.body;
 
-    // Buscar usuario por email INCLUYENDO la relación con mesa
     const user = await User.findOne({ 
       where: { email },
       include: ['mesa']
@@ -66,13 +65,11 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Credenciales incorrectas' });
     }
 
-    // Verificar contraseña
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({ message: 'Credenciales incorrectas' });
     }
 
-    // Verificar si el usuario tiene 2FA activado
     if (user.twoFactorEnabled) {
       if (!twoFactorCode) {
         return res.status(200).json({
@@ -102,7 +99,6 @@ const login = async (req, res) => {
       }
     }
 
-    // Generar token JWT
     const token = jwt.sign(
       { 
         id: user.id, 
@@ -114,7 +110,6 @@ const login = async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    // Construir respuesta con los datos de la mesa
     const userResponse = {
       id: user.id,
       email: user.email,
@@ -129,7 +124,6 @@ const login = async (req, res) => {
       } : null
     };
 
-    // Enviar respuesta exitosa
     res.json({
       message: 'Login exitoso',
       token,
@@ -155,7 +149,6 @@ const verify2FA = async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-    // Verificar código 2FA
     const isValid2FA = verify2FACode(user.twoFactorSecret, twoFactorCode);
     
     let isBackupCode = false;
@@ -175,7 +168,6 @@ const verify2FA = async (req, res) => {
       return res.status(401).json({ message: 'Código 2FA inválido' });
     }
 
-    // Generar token JWT
     const token = jwt.sign(
       { 
         id: user.id, 
@@ -187,7 +179,6 @@ const verify2FA = async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    // Respuesta con datos de la mesa
     const userResponse = {
       id: user.id,
       email: user.email,
@@ -224,33 +215,114 @@ const logout = async (req, res) => {
   }
 };
 
-// Solicitar reset de contraseña
+// Solicitar recuperación de contraseña (envía email)
 const requestPasswordReset = async (req, res) => {
   try {
     const { email } = req.body;
-    
-    const user = await User.findOne({ where: { email } });
-    if (!user) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    if (!email) {
+      return res.status(400).json({ message: 'El correo electrónico es requerido' });
     }
 
-    const resetToken = jwt.sign(
-      { userId: user.id },
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+    const user = await User.findOne({ where: { email } });
+    
+    // Por seguridad, no revelamos si el email existe o no
+    if (!user) {
+      return res.status(200).json({ 
+        message: 'Si el correo existe en nuestro sistema, recibirás un enlace de recuperación'
+      });
+    }
 
-    res.json({
-      message: 'Token de reset generado',
-      resetToken
+    // Generar token único
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpires = new Date(Date.now() + 3600000); // 1 hora
+
+    await user.update({
+      resetToken,
+      resetExpires
     });
+
+    // Construir enlace de recuperación
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+    // Enviar email
+    await sendPasswordResetEmail(user.email, user.nombre, resetLink);
+
+    res.json({ 
+      message: 'Si el correo existe en nuestro sistema, recibirás un enlace de recuperación'
+    });
+
   } catch (error) {
     console.error('Error en requestPasswordReset:', error);
-    res.status(500).json({ message: 'Error en el servidor' });
+    res.status(500).json({ message: 'Error al procesar la solicitud' });
   }
 };
 
-// Reset de contraseña por admin
+// Verificar token de recuperación (opcional, para validar antes de mostrar el formulario)
+const verifyResetToken = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const user = await User.findOne({
+      where: {
+        resetToken: token,
+        resetExpires: { [Op.gt]: new Date() }
+      }
+    });
+
+    if (!user) {
+      return res.status(400).json({ valid: false, message: 'Token inválido o expirado' });
+    }
+
+    res.json({ valid: true });
+  } catch (error) {
+    console.error('Error en verifyResetToken:', error);
+    res.status(500).json({ message: 'Error al verificar token' });
+  }
+};
+
+// Restablecer contraseña con token
+const resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ message: 'Token y nueva contraseña son requeridos' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    const user = await User.findOne({
+      where: {
+        resetToken: token,
+        resetExpires: { [Op.gt]: new Date() }
+      }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Token inválido o expirado' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await user.update({
+      password: hashedPassword,
+      resetToken: null,
+      resetExpires: null
+    });
+
+    res.json({ message: 'Contraseña restablecida exitosamente' });
+
+  } catch (error) {
+    console.error('Error en resetPassword:', error);
+    res.status(500).json({ message: 'Error al restablecer contraseña' });
+  }
+};
+
+// ADMIN: Resetear contraseña de cualquier usuario
 const adminResetPassword = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -275,11 +347,43 @@ const adminResetPassword = async (req, res) => {
   }
 };
 
+// ADMIN: Generar contraseña temporal
+const generateTempPassword = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (req.user.rol !== 'admin') {
+      return res.status(403).json({ message: 'No autorizado' });
+    }
+
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    const tempPassword = Math.random().toString(36).slice(-8);
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+    
+    await user.update({ password: hashedPassword });
+
+    res.json({ 
+      message: 'Contraseña temporal generada',
+      tempPassword
+    });
+  } catch (error) {
+    console.error('Error en generateTempPassword:', error);
+    res.status(500).json({ message: 'Error en el servidor' });
+  }
+};
+
 module.exports = {
   register,
   login,
   verify2FA,
   logout,
   requestPasswordReset,
-  adminResetPassword
+  verifyResetToken,
+  resetPassword,
+  adminResetPassword,
+  generateTempPassword
 };
