@@ -51,7 +51,7 @@ const enable2FAForUser = async (req, res) => {
 
     res.json({
       qrCodeUrl,
-      backupCodes, // Mostrar SOLO una vez
+      backupCodes,
       secret: secret.base32,
     });
   } catch (error) {

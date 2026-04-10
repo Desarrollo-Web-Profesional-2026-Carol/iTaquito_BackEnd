@@ -56,8 +56,11 @@ const login = async (req, res) => {
   try {
     const { email, password, twoFactorCode } = req.body;
 
-    // Buscar usuario por email
-    const user = await User.findOne({ where: { email } });
+    // Buscar usuario por email INCLUYENDO la relación con mesa
+    const user = await User.findOne({ 
+      where: { email },
+      include: ['mesa']
+    });
     
     if (!user) {
       return res.status(401).json({ message: 'Credenciales incorrectas' });
@@ -71,7 +74,6 @@ const login = async (req, res) => {
 
     // Verificar si el usuario tiene 2FA activado
     if (user.twoFactorEnabled) {
-      // Si no se proporcionó código 2FA, pedirlo
       if (!twoFactorCode) {
         return res.status(200).json({
           requires2FA: true,
@@ -80,17 +82,14 @@ const login = async (req, res) => {
         });
       }
 
-      // Verificar código 2FA
       const isValid2FA = verify2FACode(user.twoFactorSecret, twoFactorCode);
       
-      // Si el código 2FA no es válido, verificar códigos de respaldo
       let isBackupCode = false;
       if (!isValid2FA && user.backupCodes) {
         const backupCodes = JSON.parse(user.backupCodes);
         for (let i = 0; i < backupCodes.length; i++) {
           if (await bcrypt.compare(twoFactorCode, backupCodes[i])) {
             isBackupCode = true;
-            // Eliminar el código de respaldo usado
             backupCodes.splice(i, 1);
             await user.update({ backupCodes: JSON.stringify(backupCodes) });
             break;
@@ -115,17 +114,26 @@ const login = async (req, res) => {
       { expiresIn: '24h' }
     );
 
+    // Construir respuesta con los datos de la mesa
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      nombre: user.nombre,
+      rol: user.rol,
+      twoFactorEnabled: user.twoFactorEnabled,
+      iMesaId: user.mesa ? user.mesa.id : null,
+      mesa: user.mesa ? {
+        id: user.mesa.id,
+        sNumero: user.mesa.sNumero,
+        sEstado: user.mesa.sEstado
+      } : null
+    };
+
     // Enviar respuesta exitosa
     res.json({
       message: 'Login exitoso',
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        nombre: user.nombre,
-        rol: user.rol,
-        twoFactorEnabled: user.twoFactorEnabled
-      }
+      user: userResponse
     });
 
   } catch (error) {
@@ -134,12 +142,15 @@ const login = async (req, res) => {
   }
 };
 
-// Verificar 2FA por separado (opcional)
+// Verificar 2FA por separado
 const verify2FA = async (req, res) => {
   try {
     const { userId, twoFactorCode } = req.body;
 
-    const user = await User.findByPk(userId);
+    const user = await User.findByPk(userId, {
+      include: ['mesa']
+    });
+    
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
@@ -147,7 +158,6 @@ const verify2FA = async (req, res) => {
     // Verificar código 2FA
     const isValid2FA = verify2FACode(user.twoFactorSecret, twoFactorCode);
     
-    // Verificar códigos de respaldo
     let isBackupCode = false;
     if (!isValid2FA && user.backupCodes) {
       const backupCodes = JSON.parse(user.backupCodes);
@@ -177,16 +187,25 @@ const verify2FA = async (req, res) => {
       { expiresIn: '24h' }
     );
 
+    // Respuesta con datos de la mesa
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      nombre: user.nombre,
+      rol: user.rol,
+      twoFactorEnabled: user.twoFactorEnabled,
+      iMesaId: user.mesa ? user.mesa.id : null,
+      mesa: user.mesa ? {
+        id: user.mesa.id,
+        sNumero: user.mesa.sNumero,
+        sEstado: user.mesa.sEstado
+      } : null
+    };
+
     res.json({
       message: '2FA verificado correctamente',
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        nombre: user.nombre,
-        rol: user.rol,
-        twoFactorEnabled: user.twoFactorEnabled
-      }
+      user: userResponse
     });
 
   } catch (error) {
@@ -198,7 +217,6 @@ const verify2FA = async (req, res) => {
 // Logout
 const logout = async (req, res) => {
   try {
-    // El logout se maneja en el frontend eliminando el token
     res.json({ message: 'Logout exitoso' });
   } catch (error) {
     console.error('Error en logout:', error);
@@ -216,18 +234,15 @@ const requestPasswordReset = async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-    // Generar token de reset
     const resetToken = jwt.sign(
       { userId: user.id },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    // Aquí enviarías el email con el token
-    // Por ahora solo lo devolvemos en la respuesta
     res.json({
       message: 'Token de reset generado',
-      resetToken // En producción no devolver esto, enviar por email
+      resetToken
     });
   } catch (error) {
     console.error('Error en requestPasswordReset:', error);
