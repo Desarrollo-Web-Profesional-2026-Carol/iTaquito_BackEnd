@@ -11,7 +11,7 @@ const sendPasswordResetEmail = async (to, nombre, resetLink) => {
   console.log(`📧 Intentando enviar correo de recuperación a: ${to}`);
 
   const payload = JSON.stringify({
-    sender: { name: 'iTaquito', email: 'a7c57b001@smtp-brevo.com' },
+sender: { name: 'iTaquito', email: 'rossvernecarol@gmail.com' },
     to: [{ email: to, name: nombre }],
     subject: '🔐 Recupera tu contraseña - iTaquito',
     htmlContent: `
