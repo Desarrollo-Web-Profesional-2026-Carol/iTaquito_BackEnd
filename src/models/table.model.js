@@ -15,12 +15,11 @@ module.exports = (sequelize, DataTypes) => {
         primaryKey: true,
         autoIncrement: true,
       },
-      sNombre: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true,
-        validate: { notEmpty: true },
-      },
+     sNombre: {
+  type: DataTypes.STRING,
+  allowNull: false,
+  validate: { notEmpty: true },
+},
       iCapacidad: {
         type: DataTypes.INTEGER,
         allowNull: false,
