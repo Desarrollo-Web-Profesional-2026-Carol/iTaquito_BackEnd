@@ -1,10 +1,9 @@
-// src/common/config/email.js
 const nodemailer = require('nodemailer');
 
 // Configuración del transporter
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || 'smtp.gmail.com',  
-  port: process.env.EMAIL_PORT || 587,
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.EMAIL_PORT) || 587,
   secure: false,
   auth: {
     user: process.env.EMAIL_USER,
@@ -12,15 +11,24 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Verificar conexión al iniciar (útil para ver en logs de Railway)
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ Error al conectar con el servidor de correo:', error.message);
+  } else {
+    console.log('✅ Servidor de correo listo para enviar emails');
+  }
+});
+
 // Enviar correo de recuperación
 const sendPasswordResetEmail = async (to, nombre, resetLink) => {
- 
-
-  // Si no hay credenciales de email, solo mostrar en consola (modo desarrollo)
+  // Validar que existan las credenciales
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-
-    return;
+    console.error('❌ EMAIL_USER o EMAIL_PASS no están configurados en las variables de entorno');
+    throw new Error('Configuración de email faltante. Contacta al administrador.');
   }
+
+  console.log(`📧 Intentando enviar correo de recuperación a: ${to}`);
 
   const html = `
     <!DOCTYPE html>
@@ -66,14 +74,19 @@ const sendPasswordResetEmail = async (to, nombre, resetLink) => {
   `;
 
   try {
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: `"iTaquito" <${process.env.EMAIL_USER}>`,
       to,
       subject: '🔐 Recupera tu contraseña - iTaquito',
       html,
     });
+
+    console.log(`✅ Correo enviado exitosamente a ${to} — ID: ${info.messageId}`);
+    return info;
   } catch (error) {
-  
+    console.error('❌ Error al enviar el correo:', error.message);
+    console.error('   Detalles:', error);
+    throw new Error(`No se pudo enviar el correo de recuperación: ${error.message}`);
   }
 };
 
