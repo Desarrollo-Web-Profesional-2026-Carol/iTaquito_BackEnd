@@ -13,7 +13,7 @@ const corsOptions = {
     const allowedOrigins = [
       'http://localhost:5173',      // Desarrollo Vite
       'http://localhost:3000',      // Desarrollo local
-      'https://itaquito.netlify.app' // Producción Netlify
+      'https://itaquitof.netlify.app' // Producción Netlify
     ];
     
     if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
