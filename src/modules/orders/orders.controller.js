@@ -33,9 +33,6 @@ const calcTotal = (items) =>
 
 /* ══════════════════════════════════════════════════════════════
    GET /orders
-   - Cliente: solo ve pedidos de su mesa DESDE su loginAt
-             (aísla la sesión actual sin tabla de sesiones)
-   - Staff:   puede filtrar por iMesaId, sEstado, fecha
 ══════════════════════════════════════════════════════════════ */
 const getAll = async (req, res) => {
   try {
@@ -51,18 +48,25 @@ const getAll = async (req, res) => {
     }
 
     if (req.user.rol === 'mesa') {
-      // Forzar mesa del token — el cliente no puede ver otras mesas
-      where.iMesaId    = req.user.iMesaId;
+      // FIX: iMesaId puede venir del token (fix nuevo) o del query param (fallback)
+      const mesaIdFinal = req.user.iMesaId ?? (iMesaId ? parseInt(iMesaId) : null);
+
+      if (!mesaIdFinal) {
+        return res.status(400).json({
+          success: false,
+          message: 'Token inválido: falta el id de mesa.',
+        });
+      }
+
+      where.iMesaId    = mesaIdFinal;
       where.iUsuarioId = req.user.id;
 
-      // FIX SESIÓN: filtrar mediante token explícito desde localStorage en vez del JWT
       if (req.query.sTokenSesion) {
         where.sTokenSesion = req.query.sTokenSesion;
       } else if (req.user.loginAt) {
-        // Fallback legado si no hay tokenSesion
-        const desde = new Date(req.user.loginAt);
-        where.createdAt = { [Op.gte]: desde };
+        where.createdAt = { [Op.gte]: new Date(req.user.loginAt) };
       }
+
     } else if (iMesaId) {
       where.iMesaId = iMesaId;
     }
@@ -99,7 +103,6 @@ const getById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
     }
 
-    // Cliente solo puede ver pedidos de su mesa
     if (req.user.rol === 'mesa' && order.iMesaId !== req.user.iMesaId) {
       return res.status(403).json({ success: false, message: 'Sin acceso a este pedido.' });
     }
