@@ -35,16 +35,12 @@ const calcularTotalOrden = (order) =>
 
 /* ══════════════════════════════════════════════════════════════
    GET /cajero/orders-by-table
-   Filtra pedidos por sesión activa de cada mesa:
-   solo muestra órdenes creadas desde el dUltimoLogin
-   del usuario asignado a esa mesa.
 ══════════════════════════════════════════════════════════════ */
 const getOrdersByTable = async (req, res) => {
   try {
     const { estado } = req.query;
 
-    // 1. Obtener todos los usuarios cliente con mesa asignada
-    //    para saber el dUltimoLogin de cada uno
+    // 1. Obtener dUltimoLogin de cada mesa para saber el inicio de sesión
     const usuarios = await User.findAll({
       where: {
         rol:     'cliente',
@@ -77,16 +73,16 @@ const getOrdersByTable = async (req, res) => {
 
     orders.forEach(order => {
       const tokenSesion = order.sTokenSesion || `legacy-${order.iMesaId}`;
-      const totalOrden = calcularTotalOrden(order);
+      const totalOrden  = calcularTotalOrden(order);
 
       if (!ordersBySession[tokenSesion]) {
         ordersBySession[tokenSesion] = {
-          mesa:        order.mesa,
-          tokenSesion: tokenSesion,
-          orders:      [],
-          totalMesa:   0,
-          ordersCount: 0,
-          sessionStart: loginAt || null,
+          mesa:         order.mesa,
+          tokenSesion:  tokenSesion,
+          orders:       [],
+          totalMesa:    0,
+          ordersCount:  0,
+          sessionStart: loginPorMesa[order.iMesaId] || null, // ✅ fix: era loginAt (undefined)
         };
       }
 
@@ -126,7 +122,6 @@ const getOrdersByMesaId = async (req, res) => {
   try {
     const { mesaId } = req.params;
 
-    // Obtener dUltimoLogin del usuario de esta mesa
     const usuario = await User.findOne({
       where: { iMesaId: mesaId, rol: 'cliente' },
       attributes: ['id', 'dUltimoLogin'],
@@ -138,7 +133,6 @@ const getOrdersByMesaId = async (req, res) => {
       sEstado: { [Op.notIn]: ['cancelado', 'pagado'] },
     };
 
-    // Filtrar por sesión activa si existe dUltimoLogin
     if (usuario?.dUltimoLogin) {
       where.createdAt = { [Op.gte]: new Date(usuario.dUltimoLogin) };
     }
@@ -156,7 +150,6 @@ const getOrdersByMesaId = async (req, res) => {
 
     const totalMesa = ordersConTotal.reduce((sum, o) => sum + o.totalCalculado, 0);
 
-    
     res.json({
       success: true,
       data: ordersConTotal,
@@ -177,13 +170,12 @@ const getOrdersByMesaId = async (req, res) => {
 
 /* ══════════════════════════════════════════════════════════════
    POST /cajero/approve-payment/:mesaId
-   Al aprobar: actualiza dUltimoLogin del usuario → nueva sesión
 ══════════════════════════════════════════════════════════════ */
 const approvePayment = async (req, res) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const { mesaId }     = req.params;
+    const { mesaId }               = req.params;
     const { metodoPago, sTokenSesion } = req.body;
 
     const metodosValidos = ['efectivo', 'tarjeta', 'transferencia'];
@@ -195,6 +187,17 @@ const approvePayment = async (req, res) => {
       });
     }
 
+    const mesa = await Table.findByPk(mesaId, { transaction });
+    if (!mesa) {
+      await transaction.rollback();
+      return res.status(404).json({ success: false, message: 'Mesa no encontrada' });
+    }
+
+    const usuarioDeMesa = await User.findOne({
+      where: { iMesaId: mesaId, rol: 'cliente' },
+      transaction,
+    });
+
     const orderWhere = {
       iMesaId: mesaId,
       bPagado: false,
@@ -203,28 +206,8 @@ const approvePayment = async (req, res) => {
     if (sTokenSesion && !sTokenSesion.startsWith('legacy-')) {
       orderWhere.sTokenSesion = sTokenSesion;
     }
-
-    const mesa = await Table.findByPk(mesaId, { transaction });
-    if (!mesa) {
-      await transaction.rollback();
-      return res.status(404).json({ success: false, message: 'Mesa no encontrada' });
-    }
-
-    // Obtener usuario de la mesa para filtrar por sesión activa
-    const usuarioDeMesa = await User.findOne({
-      where: { iMesaId: mesaId, rol: 'cliente' },
-      transaction,
-    });
-
-    const whereOrdenes = {
-      iMesaId: mesaId,
-      bPagado: false,
-      sEstado: { [Op.notIn]: ['cancelado', 'pagado'] },
-    };
-
-    // Solo cobrar órdenes de la sesión activa
     if (usuarioDeMesa?.dUltimoLogin) {
-      whereOrdenes.createdAt = { [Op.gte]: new Date(usuarioDeMesa.dUltimoLogin) };
+      orderWhere.createdAt = { [Op.gte]: new Date(usuarioDeMesa.dUltimoLogin) };
     }
 
     const orders = await Order.findAll({
@@ -243,27 +226,16 @@ const approvePayment = async (req, res) => {
 
     const totalPagar = orders.reduce((sum, o) => sum + calcularTotalOrden(o), 0);
 
-    // 1. Marcar órdenes como pagadas
     await Order.update(
-      {
-        bPagado:     true,
-        dFechaPago:  new Date(),
-        sMetodoPago: metodoPago,
-        sEstado:     'pagado',
-      },
-      {
-        where: orderWhere,
-        transaction,
-      }
+      { bPagado: true, dFechaPago: new Date(), sMetodoPago: metodoPago, sEstado: 'pagado' },
+      { where: orderWhere, transaction }
     );
 
-    // 2. Liberar mesa
     await Table.update(
       { sEstado: 'disponible' },
       { where: { id: mesaId }, transaction }
     );
 
-    // 3. Actualizar dUltimoLogin del usuario → inicia nueva sesión limpia
     const nuevaSesionAt = new Date();
     if (usuarioDeMesa) {
       await usuarioDeMesa.update({ dUltimoLogin: nuevaSesionAt }, { transaction });
@@ -271,7 +243,6 @@ const approvePayment = async (req, res) => {
 
     await transaction.commit();
 
-    // 4. Generar nuevo token con loginAt actualizado
     let nuevoToken = null;
     if (usuarioDeMesa) {
       nuevoToken = jwt.sign(
@@ -290,10 +261,10 @@ const approvePayment = async (req, res) => {
       success: true,
       message: 'Pago aprobado exitosamente',
       data: {
-        mesa:              mesa.sNombre,
-        totalPagado:       totalPagar,
+        mesa:             mesa.sNombre,
+        totalPagado:      totalPagar,
         metodoPago,
-        ordersProcesadas:  orders.length,
+        ordersProcesadas: orders.length,
         nuevoTokenCliente: nuevoToken,
       },
     });
@@ -301,11 +272,7 @@ const approvePayment = async (req, res) => {
   } catch (error) {
     await transaction.rollback();
     console.error('Error en approvePayment:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al procesar el pago',
-      error: error.message,
-    });
+    res.status(500).json({ success: false, message: 'Error al procesar el pago', error: error.message });
   }
 };
 
@@ -321,6 +288,7 @@ const changeTableAvailability = async (req, res) => {
 
     const estadosValidos = ['disponible', 'ocupada', 'reservada', 'inactiva', 'en_pago'];
     if (!sEstado || !estadosValidos.includes(sEstado)) {
+      await transaction.rollback();
       return res.status(400).json({
         success: false,
         message: `Estado no válido. Estados permitidos: ${estadosValidos.join(', ')}`,
@@ -334,16 +302,15 @@ const changeTableAvailability = async (req, res) => {
     }
 
     if (sEstado === 'disponible') {
-      // Cancelar todos los pedidos huérfanos que no estén ya pagados o cancelados
       await Order.update(
         { sEstado: 'cancelado' },
-        { 
+        {
           where: {
             iMesaId: mesaId,
             bPagado: false,
             sEstado: { [Op.notIn]: ['cancelado', 'pagado'] },
           },
-          transaction
+          transaction,
         }
       );
     }
